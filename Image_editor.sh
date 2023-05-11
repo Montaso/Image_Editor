@@ -193,6 +193,64 @@ else
 fi
 }
 
+ChangeFormat () {
+local EXTENSION="${TMP_IMAGE_NAME##*.}"
+local NAME="${IMAGE_NAME%.*}"
+
+local VALUE=$(zenity --forms --title "Select new format" --text "Select new format" \
+--add-combo="select format" \
+--combo-values="png|jpg|bmp|webp")
+
+if ! [ -z "$VALUE" ]; then
+    convert $TMP_IMAGE_NAME "TMP_$NAME.$VALUE"
+    rm "$TMP_IMAGE_NAME"
+    
+    TMP_IMAGE_NAME="TMP_$NAME.$VALUE"
+    #echo "new tmp name: $TMP_IMAGE_NAME"
+    
+    IMAGE_NAME=$NAME.$VALUE
+    #echo "new name: $IMAGE_NAME"
+    
+    ((OPERATION_CNT += 1))
+fi
+}
+
+AddText () {
+local IMAGE_SURFACE=$((IMAGE_WIDTH * IMAGE_HEIGHT))
+
+local VALUE=$(zenity --forms --title "Add text to image" --text "Add text to image" \
+--add-entry="Your text: " \
+--add-combo="Where do you want the text to be?" --combo-values="Top|Bottom" \
+--add-combo="Color: " --combo-values="black|white|gray|red|orange|blue|green")
+local OLD_SEPARATOR=$IFS
+IFS='|'
+    
+#checks if user didnt click cancel
+if ! [ -z "$VALUE" ]; then
+    local INPUT_TEXT
+    local TEXT_POS
+    local TEXT_COLOR
+    local FONT_SIZE=$((IMAGE_WIDTH / 10))
+    
+    read -r INPUT_TEXT TEXT_POS TEXT_COLOR <<< "$VALUE"
+    
+    echo "add text: $TMP_IMAGE_NAME | font size: $FONT_SIZE"
+    
+    if [ "$TEXT_POS" = "Top" ]; then
+        convert "$TMP_IMAGE_NAME" -gravity Center -pointsize "$FONT_SIZE" -fill "$TEXT_COLOR" \
+        -annotate +0-"$((IMAGE_HEIGHT / 2 - FONT_SIZE / 2))" "$INPUT_TEXT" "$TMP_IMAGE_NAME"
+    fi
+    if [ "$TEXT_POS" = "Bottom" ]; then
+        convert "$TMP_IMAGE_NAME" -gravity Center -pointsize "$FONT_SIZE" -fill "$TEXT_COLOR" \
+        -annotate +0+"$((IMAGE_HEIGHT / 2 - FONT_SIZE / 2))" "$INPUT_TEXT" "$TMP_IMAGE_NAME"
+    fi
+    
+    ((OPERATION_CNT += 1))
+fi
+
+IFS=$OLD_SEPARATOR
+}
+
 ManageWindow () {
 
 while true
@@ -214,7 +272,9 @@ do
       9 "Change brightness" \
       10 "Change contrast" \
       11 "Change saturation" \
-      12 "Exit")
+      12 "Change format" \
+      13 "Add text" \
+      14 "Exit")
 
 # Handle the user's choice
     case $CHOICE in
@@ -229,10 +289,25 @@ do
       9) ChangeBrightness ;;
       10) ChangeContrast ;;
       11) ChangeSaturation ;;
-      12) return ;;
+      12) ChangeFormat ;;
+      13) AddText ;;
+      14) return ;;
       *) zenity --error --text "Invalid choice." ;;
     esac
 done
+}
+
+SaveImage () {
+if [ "$OPERATION_CNT" -gt 0 ]; then
+    SAVE_DIR=$(zenity --file-selection --directory --title="Choose saving directory")
+    case $? in
+        0) mv "$TMP_IMAGE_NAME" "${SAVE_DIR}/edited_$IMAGE_NAME" ;;
+        1) echo "Operation cancelled" | rm "$TMP_IMAGE_NAME" ;;
+        -1) echo "Unexpected error occured" | rm "$TMP_IMAGE_NAME" ;;
+    esac
+else
+    rm "$TMP_IMAGE_NAME"
+fi
 }
 
 #=======================PROGRAM_START==========================
@@ -246,21 +321,13 @@ IMAGE_NAME=$(basename $IMAGE)
 TMP_IMAGE_NAME="TMP_$IMAGE_NAME"
 echo "Image name: "$IMAGE_NAME
 
+DIMENSIONS=$(identify -format "%w %h" "$IMAGE")
+read -r IMAGE_WIDTH IMAGE_HEIGHT <<< "$DIMENSIONS"
+
 cp $IMAGE $TMP_IMAGE_NAME
 
 ManageWindow
 
-
 echo "Changes done: "$OPERATION_CNT
-
-if [ "$OPERATION_CNT" -gt 0 ]; then
-    SAVE_DIR=$(zenity --file-selection --directory --title="Choose saving directory")
-    case $? in
-        0) mv "$TMP_IMAGE_NAME" "${SAVE_DIR}/edited_$IMAGE_NAME" ;;
-        1) echo "Operation cancelled" | rm "$TMP_IMAGE_NAME" ;;
-        -1) echo "Unexpected error occured" | rm "$TMP_IMAGE_NAME" ;;
-    esac
-else
-    rm "$TMP_IMAGE_NAME"
-fi
+SaveImage
 
